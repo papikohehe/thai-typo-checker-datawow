@@ -1,0 +1,4 @@
+streamlit
+thaispellcheck
+python-docx
+deepcut

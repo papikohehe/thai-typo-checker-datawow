@@ -52,7 +52,6 @@ def find_invalid_periods(text):
             invalid_indices.append(match.start())
     return invalid_indices
 
-@st.cache_data(show_spinner=False)
 def cross_check_spelling(text):
     tokens = word_tokenize(text)
     thaispell_errors = set(thaispellcheck.get_errors(text))

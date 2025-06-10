@@ -74,7 +74,8 @@ def safe_check(text):
 
 def cross_check_spelling(text):
     tokens = word_tokenize(text)
-    thaispell_errors = thaispellcheck.get_errors(text)
+    marked_text = thaispellcheck.check(text, autocorrect=False)
+    thaispell_errors = re.findall(r"<คำผิด>(.*?)</คำผิด>", marked_text)
     pythai_errors = [word for word in tokens if word not in spell(word)]
 
     all_errors = set(thaispell_errors + pythai_errors)

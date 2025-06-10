@@ -158,6 +158,4 @@ if uploaded_file:
 
 
 
-Add pythaiNLP as option before analyze so in the end user choose between 
-pythaiNLP and thaispellcheck. Also add filter by errors too
 

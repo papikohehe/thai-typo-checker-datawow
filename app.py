@@ -1,16 +1,17 @@
 import streamlit as st
 import docx
 import thaispellcheck
+import html as html_lib  # to safely escape HTML content
 
 PHINTHU = "\u0E3A"
 
 st.title("Thai Spellchecker for DOCX")
 st.write("🔍 Upload a `.docx` file to find and highlight:")
 st.markdown("""
-- ❌ Thai spelling errors (🔴 red)
-- ⚠️ Unexpected Thai dot ◌ฺ (🟠 orange)
+- ❌ Thai spelling errors (🔴 red)<br>
+- ⚠️ Unexpected Thai dot ◌ฺ (🟠 orange)<br>
 - ⚠️ Misused apostrophes `'` (🟣 purple)
-""")
+""", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
@@ -42,14 +43,14 @@ def render_html(results):
     html = "<style> mark { padding: 2px 4px; border-radius: 3px; } </style>"
     for item in results:
         line_no = item["line_no"]
-        original = item["original"]
-        marked = item["marked"]
+        original = html_lib.escape(item["original"])
+        marked = html_lib.escape(item["marked"])
         has_phinthu = item["has_phinthu"]
         has_apostrophe = item["has_apostrophe"]
 
         # Highlight typos (in red)
-        marked = marked.replace("<คำผิด>", "<mark style='background-color:#ffcccc;'>")
-        marked = marked.replace("</คำผิด>", "</mark>")
+        marked = marked.replace("&lt;คำผิด&gt;", "<mark style='background-color:#ffcccc;'>")
+        marked = marked.replace("&lt;/คำผิด&gt;", "</mark>")
 
         # Highlight phinthu (in orange)
         marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")

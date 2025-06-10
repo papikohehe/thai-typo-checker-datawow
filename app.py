@@ -5,11 +5,16 @@ import html as html_lib
 import re
 
 PHINTHU = "\u0E3A"
+
+# Updated to include Thai digit lists and times, ellipses
 VALID_PERIOD_PATTERNS = [
-    r"\b[0-9]+\.",       # numbered list: 1., 2., etc.
-    r"\b[ก-ฮ]\.",        # Thai alphabetical list: ก., ข., etc.
-    r"\bพ\.ศ\.",         # Buddhist Era
-    r"\bค\.ศ\."          # Christian Era
+    r"\b[0-9]+\.",            # Arabic numeral list: 1., 2.
+    r"\b[ก-ฮ]\.",             # Thai alphabetic list: ก., ข.
+    r"\b[๐-๙]+\.",            # Thai digit list: ๒.
+    r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",  # Thai time: ๑๐.๑๐
+    r"\bพ\.ศ\.",              # พ.ศ.
+    r"\bค\.ศ\.",              # ค.ศ.
+    r"\.{3,}"                 # Ellipses: ..., ........
 ]
 
 st.title("Thai Spellchecker for DOCX")
@@ -46,9 +51,13 @@ def highlight_invalid_periods(text, invalid_indices):
 
 def check_docx(file):
     doc = docx.Document(file)
+    paragraphs = doc.paragraphs
+    total = len(paragraphs)
     results = []
 
-    for i, para in enumerate(doc.paragraphs):
+    progress_bar = st.progress(0, text="Processing...")
+
+    for i, para in enumerate(paragraphs):
         text = para.text.strip()
         if not text:
             continue
@@ -68,6 +77,12 @@ def check_docx(file):
                 "has_apostrophe": has_apostrophe,
                 "invalid_periods": invalid_periods
             })
+
+        # Update progress
+        progress = int((i + 1) / total * 100)
+        progress_bar.progress(progress, text=f"Processing paragraph {i+1} of {total} ({progress}%)")
+
+    progress_bar.empty()
     return results
 
 def render_html(results):
@@ -108,7 +123,7 @@ def render_html(results):
             html += f"<span style='color:#800080;'>⚠️ Found apostrophe `'` — may be unintended.</span><br>"
 
         if invalid_periods:
-            html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., or list formats.</span><br>"
+            html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., list formats, Thai time, or ellipses.</span><br>"
 
         html += f"<code style='color:gray;'>{original}</code><br>"
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"

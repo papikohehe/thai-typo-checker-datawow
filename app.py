@@ -3,11 +3,11 @@ import docx
 import thaispellcheck
 import html as html_lib
 import re
-from pythainlp.spell import spell
 
 # Constants
 PHINTHU = "\u0E3A"
 
+# Updated patterns to include Thai numerals and ellipses
 VALID_PERIOD_PATTERNS = [
     r"\b[0-9]+\.",                  # Arabic numeral lists: 1., 2.
     r"\b[ก-ฮ]\.",                   # Thai alphabetical lists: ก., ข.
@@ -15,26 +15,18 @@ VALID_PERIOD_PATTERNS = [
     r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",   # Thai time: ๑๐.๑๐
     r"\bพ\.ศ\.",                   # พ.ศ.
     r"\bค\.ศ\.",                   # ค.ศ.
-    r"\.{3,}"                       # Ellipses
+    r"\.{3,}"                       # Ellipses: ..., ..........
 ]
 
 # UI
 st.title("Thai Spellchecker for DOCX")
-st.write("🔍 Upload a `.docx` file to find and highlight issues.")
+st.write("🔍 Upload a `.docx` file to find and highlight:")
 st.markdown("""
 - ❌ Thai spelling errors (🔴 red)<br>
 - ⚠️ Unexpected Thai dot ◌ฺ (🟠 orange)<br>
 - ⚠️ Misused apostrophes `'` (🟣 purple)<br>
 - ⚠️ Invalid period use `.` (🔵 blue)
 """, unsafe_allow_html=True)
-
-engine_choice = st.selectbox("Select Spellcheck Engine", ["thaispellcheck", "pythainlp"])
-
-error_filters = st.multiselect(
-    "Filter error types",
-    ["Spelling", "Phinthu", "Apostrophe", "Invalid Period"],
-    default=["Spelling", "Phinthu", "Apostrophe", "Invalid Period"]
-)
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
@@ -63,28 +55,17 @@ def highlight_invalid_periods(text, invalid_indices):
     return text
 
 
-def safe_check(text, engine="thaispellcheck"):
+def safe_check(text):
     try:
-        if engine == "thaispellcheck":
-            marked = thaispellcheck.check(text, autocorrect=False)
-            if len(marked.replace("<คำผิด>", "").replace("</คำผิด>", "")) < len(text) - 5:
-                return text  # fallback
-            return marked
-        elif engine == "pythainlp":
-            words = text.split()
-            mistakes = set(spell(text))
-            marked = ""
-            for word in words:
-                if word in mistakes:
-                    marked += f"<คำผิด>{word}</คำผิด> "
-                else:
-                    marked += word + " "
-            return marked.strip()
+        marked = thaispellcheck.check(text, autocorrect=False)
+        if len(marked.replace("<คำผิด>", "").replace("</คำผิด>", "")) < len(text) - 5:
+            return text  # fallback if it looks wrong
+        return marked
     except Exception:
         return text
 
 
-def check_docx(file, engine="thaispellcheck"):
+def check_docx(file):
     doc = docx.Document(file)
     paragraphs = doc.paragraphs
     total = len(paragraphs)
@@ -100,7 +81,8 @@ def check_docx(file, engine="thaispellcheck"):
         has_phinthu = PHINTHU in text
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
-        marked = safe_check(text, engine)
+
+        marked = safe_check(text)
 
         if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods:
             results.append({
@@ -119,7 +101,7 @@ def check_docx(file, engine="thaispellcheck"):
     return results
 
 
-def render_html(results, filters):
+def render_html(results):
     html = "<style> mark { padding: 2px 4px; border-radius: 3px; } </style>"
     for item in results:
         line_no = item["line_no"]
@@ -129,24 +111,14 @@ def render_html(results, filters):
         has_apostrophe = item["has_apostrophe"]
         invalid_periods = item["invalid_periods"]
 
-        # Filter logic
-        skip = True
-        if "Spelling" in filters and "<คำผิด>" in item["marked"]:
-            skip = False
-        if "Phinthu" in filters and has_phinthu:
-            skip = False
-        if "Apostrophe" in filters and has_apostrophe:
-            skip = False
-        if "Invalid Period" in filters and invalid_periods:
-            skip = False
-        if skip:
-            continue
-
-        # Highlight
+        # Highlight <คำผิด>
         marked = marked.replace("&lt;คำผิด&gt;", "<mark style='background-color:#ffcccc;'>")
         marked = marked.replace("&lt;/คำผิด&gt;", "</mark>")
+
+        # Highlight ◌ฺ
         marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
 
+        # Highlight apostrophes
         def highlight_apostrophes(text):
             def replacer(match):
                 content = match.group(1)
@@ -154,31 +126,38 @@ def render_html(results, filters):
             return re.sub(r">(.*?)<", replacer, text)
 
         marked = highlight_apostrophes(marked)
+
+        # Highlight invalid periods
         marked = highlight_invalid_periods(marked, invalid_periods)
 
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
-        if has_phinthu and "Phinthu" in filters:
+        if has_phinthu:
             html += f"<span style='color:#d00;'>⚠️ Found unexpected dot (◌ฺ) — possibly OCR or typing error.</span><br>"
 
-        if has_apostrophe and "Apostrophe" in filters:
+        if has_apostrophe:
             html += f"<span style='color:#800080;'>⚠️ Found apostrophe `'` — may be unintended.</span><br>"
 
-        if invalid_periods and "Invalid Period" in filters:
+        if invalid_periods:
             html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., list formats, Thai time, or ellipses.</span><br>"
 
         html += f"<code style='color:gray;'>{original}</code><br>"
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"
-
     return html
 
 
-# Main logic
+# Main app logic
 if uploaded_file:
     with st.spinner("🔎 Checking for typos and issues..."):
-        results = check_docx(uploaded_file, engine=engine_choice)
+        results = check_docx(uploaded_file)
         if results:
-            st.markdown(render_html(results, error_filters), unsafe_allow_html=True)
+            st.markdown(render_html(results), unsafe_allow_html=True)
         else:
             st.success("✅ No typos, apostrophes, ◌ฺ characters, or invalid periods found!")
+
+
+
+Add pythaiNLP as option before analyze so in the end user choose between 
+pythaiNLP and thaispellcheck. Also add filter by errors too
+

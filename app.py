@@ -4,19 +4,21 @@ import thaispellcheck
 import html as html_lib
 import re
 
+# Constants
 PHINTHU = "\u0E3A"
 
-# Patterns considered valid uses of periods
+# Updated patterns to include Thai numerals and ellipses
 VALID_PERIOD_PATTERNS = [
-    r"\b[0-9]+\.",                   # 1.
-    r"\b[ก-ฮ]\.",                    # ก.
-    r"\b[๐-๙]+\.",                  # Thai digit list: ๒.
-    r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",    # Thai time: ๑๐.๑๐
-    r"\bพ\.ศ\.",                    # พ.ศ.
-    r"\bค\.ศ\.",                    # ค.ศ.
-    r"\.{3,}"                        # Ellipses: ...
+    r"\b[0-9]+\.",                  # Arabic numeral lists: 1., 2.
+    r"\b[ก-ฮ]\.",                   # Thai alphabetical lists: ก., ข.
+    r"\b[๐-๙]+\.",                 # Thai numeral lists: ๒., ๓.
+    r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",   # Thai time: ๑๐.๑๐
+    r"\bพ\.ศ\.",                   # พ.ศ.
+    r"\bค\.ศ\.",                   # ค.ศ.
+    r"\.{3,}"                       # Ellipses: ..., ..........
 ]
 
+# UI
 st.title("Thai Spellchecker for DOCX")
 st.write("🔍 Upload a `.docx` file to find and highlight:")
 st.markdown("""
@@ -28,17 +30,8 @@ st.markdown("""
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
-# --- Spellcheck wrapper with safety
-def safe_check(text):
-    try:
-        marked = thaispellcheck.check(text, autocorrect=False)
-        if len(marked.replace("<คำผิด>", "").replace("</คำผิด>", "")) < len(text) - 5:
-            return text  # too short, probably broken
-        return marked
-    except Exception:
-        return text
 
-# --- Identify invalid periods
+# Helpers
 def find_invalid_periods(text):
     invalid_indices = []
     for match in re.finditer(r"\.", text):
@@ -52,20 +45,26 @@ def find_invalid_periods(text):
             invalid_indices.append(match.start())
     return invalid_indices
 
-# --- Apply period highlighting before escaping text
+
 def highlight_invalid_periods(text, invalid_indices):
     offset = 0
     for idx in invalid_indices:
         real_idx = idx + offset
-        text = (
-            text[:real_idx]
-            + "<mark style='background-color:#add8e6;'>.</mark>"
-            + text[real_idx + 1:]
-        )
+        text = text[:real_idx] + "<mark style='background-color:#add8e6;'>.</mark>" + text[real_idx + 1:]
         offset += len("<mark style='background-color:#add8e6;'>.</mark>") - 1
     return text
 
-# --- Check document for issues
+
+def safe_check(text):
+    try:
+        marked = thaispellcheck.check(text, autocorrect=False)
+        if len(marked.replace("<คำผิด>", "").replace("</คำผิด>", "")) < len(text) - 5:
+            return text  # fallback if it looks wrong
+        return marked
+    except Exception:
+        return text
+
+
 def check_docx(file):
     doc = docx.Document(file)
     paragraphs = doc.paragraphs
@@ -83,9 +82,7 @@ def check_docx(file):
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
 
-        # highlight periods before passing to check
-        text_with_period_highlight = highlight_invalid_periods(text, invalid_periods)
-        marked = safe_check(text_with_period_highlight)
+        marked = safe_check(text)
 
         if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods:
             results.append({
@@ -103,23 +100,22 @@ def check_docx(file):
     progress_bar.empty()
     return results
 
-# --- Render HTML with highlights
+
 def render_html(results):
     html = "<style> mark { padding: 2px 4px; border-radius: 3px; } </style>"
     for item in results:
         line_no = item["line_no"]
         original = html_lib.escape(item["original"])
-        marked = item["marked"]
+        marked = html_lib.escape(item["marked"])
         has_phinthu = item["has_phinthu"]
         has_apostrophe = item["has_apostrophe"]
         invalid_periods = item["invalid_periods"]
 
-        # Fix escaping issues
-        marked = html_lib.escape(marked)
+        # Highlight <คำผิด>
         marked = marked.replace("&lt;คำผิด&gt;", "<mark style='background-color:#ffcccc;'>")
         marked = marked.replace("&lt;/คำผิด&gt;", "</mark>")
 
-        # Highlight phinthu
+        # Highlight ◌ฺ
         marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
 
         # Highlight apostrophes
@@ -128,15 +124,21 @@ def render_html(results):
                 content = match.group(1)
                 return ">" + content.replace("'", "<mark style='background-color:#d5b3ff;'>'</mark>") + "<"
             return re.sub(r">(.*?)<", replacer, text)
+
         marked = highlight_apostrophes(marked)
+
+        # Highlight invalid periods
+        marked = highlight_invalid_periods(marked, invalid_periods)
 
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
         if has_phinthu:
             html += f"<span style='color:#d00;'>⚠️ Found unexpected dot (◌ฺ) — possibly OCR or typing error.</span><br>"
+
         if has_apostrophe:
             html += f"<span style='color:#800080;'>⚠️ Found apostrophe `'` — may be unintended.</span><br>"
+
         if invalid_periods:
             html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., list formats, Thai time, or ellipses.</span><br>"
 
@@ -144,7 +146,8 @@ def render_html(results):
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"
     return html
 
-# --- Main app logic
+
+# Main app logic
 if uploaded_file:
     with st.spinner("🔎 Checking for typos and issues..."):
         results = check_docx(uploaded_file)

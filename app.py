@@ -1,7 +1,8 @@
 import streamlit as st
 import docx
 import thaispellcheck
-import html as html_lib  # to safely escape HTML content
+import html as html_lib
+import re
 
 PHINTHU = "\u0E3A"
 
@@ -55,8 +56,14 @@ def render_html(results):
         # Highlight phinthu (in orange)
         marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
 
-        # Highlight apostrophes (in purple)
-        marked = marked.replace("'", "<mark style='background-color:#d5b3ff;'>'</mark>")
+        # Highlight apostrophes (in purple) — only in text content, not in HTML attributes
+        def highlight_apostrophes(text):
+            def replacer(match):
+                content = match.group(1)
+                return ">" + content.replace("'", "<mark style='background-color:#d5b3ff;'>'</mark>") + "<"
+            return re.sub(r">(.*?)<", replacer, text)
+
+        marked = highlight_apostrophes(marked)
 
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"

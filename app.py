@@ -6,11 +6,14 @@ import re
 
 PHINTHU = "\u0E3A"
 VALID_PERIOD_PATTERNS = [
-    r"\b[0-9]+\.",       # numbered list: 1., 2., etc.
-    r"\b[ก-ฮ]\.",        # Thai alphabetical list: ก., ข., etc.
-    r"\bพ\.ศ\.",         # Buddhist Era
-    r"\bค\.ศ\."          # Christian Era
+    r"\b[0-9]+\.",             # Arabic numbered list: 1., 2., etc.
+    r"\b[๐-๙]+\.",             # Thai numbered list: ๑., ๒., etc.
+    r"\b[ก-ฮ]\.",              # Thai alphabetical list: ก., ข., etc.
+    r"\bพ\.ศ\.",               # Buddhist Era
+    r"\bค\.ศ\.",               # Christian Era
+    r"[๐-๙]{1,2}\.[๐-๙]{1,2}"  # Thai time or decimal number: ๑๒.๓๕
 ]
+
 
 st.title("Thai Spellchecker for DOCX (Data Wow)")
 st.write("🔍 Upload a `.docx` file to find and highlight:")
@@ -28,7 +31,7 @@ def find_invalid_periods(text):
     for match in re.finditer(r"\.", text):
         is_valid = False
         for pattern in VALID_PERIOD_PATTERNS:
-            context = text[max(0, match.start()-5):match.end()+5]
+            context = text[max(0, match.start() - 10):match.end() + 10]
             if re.search(pattern, context):
                 is_valid = True
                 break

@@ -1,8 +1,11 @@
 import streamlit as st
 import docx
 import thaispellcheck
+import pythainlp
 import html as html_lib
 import re
+from pythainlp.spell import spell
+from pythainlp.tokenize import word_tokenize
 
 # Constants
 PHINTHU = "\u0E3A"
@@ -30,6 +33,11 @@ st.markdown("""
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
+filters = st.multiselect(
+    "Filter by error type:",
+    ["High Error", "Error", "Phinthu (◌ฺ)", "Apostrophe (`')", "Invalid Period"],
+    default=["High Error", "Error", "Phinthu (◌ฺ)", "Apostrophe (`')", "Invalid Period"]
+)
 
 # Helpers
 def find_invalid_periods(text):
@@ -84,32 +92,45 @@ def check_docx(file):
 
         marked = safe_check(text)
 
-        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods:
-            results.append({
-                "line_no": i + 1,
-                "original": text,
-                "marked": marked,
-                "has_phinthu": has_phinthu,
-                "has_apostrophe": has_apostrophe,
-                "invalid_periods": invalid_periods
-            })
+       spell_result = cross_check_spelling(text)
+
+if spell_result["high_errors"] or spell_result["errors"] or has_phinthu or has_apostrophe or invalid_periods:
+    results.append({
+        "line_no": i + 1,
+        "original": text,
+        "marked": marked,
+        "has_phinthu": has_phinthu,
+        "has_apostrophe": has_apostrophe,
+        "invalid_periods": invalid_periods,
+        "high_errors": spell_result["high_errors"],
+        "errors": spell_result["errors"]
+    })
 
         progress = int((i + 1) / total * 100)
         progress_bar.progress(progress, text=f"Processing paragraph {i + 1} of {total} ({progress}%)")
 
     progress_bar.empty()
     return results
+    
 
 
-def render_html(results):
+def render_html(results, filters):
     html = "<style> mark { padding: 2px 4px; border-radius: 3px; } </style>"
     for item in results:
-        line_no = item["line_no"]
-        original = html_lib.escape(item["original"])
-        marked = html_lib.escape(item["marked"])
-        has_phinthu = item["has_phinthu"]
-        has_apostrophe = item["has_apostrophe"]
-        invalid_periods = item["invalid_periods"]
+        show = False
+        if "High Error" in filters and item["high_errors"]:
+            show = True
+        if "Error" in filters and item["errors"]:
+            show = True
+        if "Phinthu (◌ฺ)" in filters and item["has_phinthu"]:
+            show = True
+        if "Apostrophe (`')" in filters and item["has_apostrophe"]:
+            show = True
+        if "Invalid Period" in filters and item["invalid_periods"]:
+            show = True
+
+        if not show:
+            continue
 
         # Highlight <คำผิด>
         marked = marked.replace("&lt;คำผิด&gt;", "<mark style='background-color:#ffcccc;'>")
@@ -146,12 +167,38 @@ def render_html(results):
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"
     return html
 
+def cross_check_spelling(text):
+    results = {
+        "high_errors": [],
+        "errors": []
+    }
+
+    tokens = word_tokenize(text)
+    thai_spell_errors = thaispellcheck.get_errors(text)
+    pythainlp_errors = []
+
+    for word in tokens:
+        if word not in spell(word):
+            pythainlp_errors.append(word)
+
+    all_errors = set(thai_spell_errors + pythainlp_errors)
+
+    for word in all_errors:
+        in_thaispell = word in thai_spell_errors
+        in_pythainlp = word in pythainlp_errors
+
+        if in_thaispell and in_pythainlp:
+            results["high_errors"].append(word)
+        else:
+            results["errors"].append(word)
+
+    return results
 
 # Main app logic
 if uploaded_file:
     with st.spinner("🔎 Checking for typos and issues..."):
         results = check_docx(uploaded_file)
-        if results:
-            st.markdown(render_html(results), unsafe_allow_html=True)
-        else:
-            st.success("✅ No typos, apostrophes, ◌ฺ characters, or invalid periods found!")
+       if results:
+    st.markdown(render_html(results, filters), unsafe_allow_html=True)
+else:
+    st.success("✅ No issues found!")

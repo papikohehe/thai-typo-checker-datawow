@@ -1,4 +1,5 @@
 streamlit
-thaispellcheck
 python-docx
+thaispellcheck
+pythainlp
 deepcut

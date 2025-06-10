@@ -57,41 +57,52 @@ def find_invalid_periods(text):
 
 def check_docx(file):
     """
-    Checks a DOCX file using two spellcheck libraries (thaispellcheck and pythainlp)
-    and identifies other stylistic issues.
+    Checks a DOCX file using an optimized "batch" approach to improve speed.
+    It finds all unique words first, checks them once, then highlights them.
     """
     doc = docx.Document(file)
+    if not doc.paragraphs:
+        return []
+
+    # --- Step 1: Aggregate all text and find unique words ---
+    all_para_texts = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    if not all_para_texts:
+        return []
+    full_text = " ".join(all_para_texts)
+    
+    # Use a set for efficiency
+    unique_words = set(word_tokenize(full_text, engine="newmm"))
+
+    # --- Step 2: Check each UNIQUE word only ONCE ---
+    # 2a. thaispellcheck on the full text
+    thaispell_marked_full = thaispellcheck.check(full_text, autocorrect=False)
+    doc_misspelled_thaispell = set(re.findall(r"<คำผิด>(.*?)</คำผิด>", thaispell_marked_full))
+
+    # 2b. pythainlp on the unique words (this is the key optimization)
+    doc_misspelled_pythainlp = set()
+    for word in unique_words:
+        if word.strip() and not word.isnumeric() and word != correct(word):
+            doc_misspelled_pythainlp.add(word)
+
+    # 2c. Determine confidence levels for the entire document
+    doc_high_confidence = doc_misspelled_thaispell.intersection(doc_misspelled_pythainlp)
+    doc_low_confidence = doc_misspelled_thaispell.symmetric_difference(doc_misspelled_pythainlp)
+
+    # --- Step 3: Iterate through paragraphs again JUST for reporting and highlighting ---
     results = []
+    for i, text in enumerate(all_para_texts):
+        # Find which of the pre-identified errors are in this specific paragraph
+        # Tokenizing each paragraph here is still necessary to match words accurately
+        para_words = set(word_tokenize(text, engine="newmm"))
+        high_confidence_errors = para_words.intersection(doc_high_confidence)
+        low_confidence_errors = para_words.intersection(doc_low_confidence)
 
-    for i, para in enumerate(doc.paragraphs):
-        text = para.text.strip()
-        if not text:
-            continue
-
-        # --- Spell Checking with Two Libraries ---
-        # 1. thaispellcheck
-        thaispell_marked = thaispellcheck.check(text, autocorrect=False)
-        # Extract words flagged by thaispellcheck
-        misspelled_thaispell = set(re.findall(r"<คำผิด>(.*?)</คำผิด>", thaispell_marked))
-
-        # 2. pythainlp
-        words = word_tokenize(text, engine="newmm")
-        misspelled_pythainlp = set()
-        for word in words:
-             # A word is considered misspelled if it's not a number and the library suggests a different word.
-            if word.strip() and not word.isnumeric() and word != correct(word):
-                misspelled_pythainlp.add(word)
-
-        # 3. Compare results to determine confidence
-        high_confidence_errors = misspelled_thaispell.intersection(misspelled_pythainlp)
-        low_confidence_errors = misspelled_thaispell.symmetric_difference(misspelled_pythainlp)
-
-        # --- Other Checks ---
+        # Other checks remain the same
         has_phinthu = PHINTHU in text
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
 
-        # --- Aggregate Results ---
+        # Aggregate results if any issue is found in this paragraph
         if high_confidence_errors or low_confidence_errors or has_phinthu or has_apostrophe or invalid_periods:
             results.append({
                 "line_no": i + 1,
@@ -102,7 +113,9 @@ def check_docx(file):
                 "has_apostrophe": has_apostrophe,
                 "invalid_periods": invalid_periods
             })
+            
     return results
+
 
 def render_html(results):
     """Renders the list of issues into an HTML string for display."""
@@ -132,7 +145,6 @@ def render_html(results):
         offset = 0
         for idx in item['invalid_periods']:
             real_idx = idx + offset
-            # A simple check to avoid injecting html inside another tag's attribute
             if real_idx > 0 and marked_text[real_idx-1] in ('"', "'"): continue
             
             marked_text = marked_text[:real_idx] + "<mark style='background-color:#add8e6;'>.</mark>" + marked_text[real_idx+1:]
@@ -163,7 +175,7 @@ def render_html(results):
 if uploaded_files:
     for uploaded_file in uploaded_files:
         st.subheader(f"Results for: `{uploaded_file.name}`")
-        with st.spinner(f"🔎 Cross-referencing spellcheckers for {uploaded_file.name}..."):
+        with st.spinner(f"🔎 Analyzing file... (this may take a moment for large documents)"):
             results = check_docx(uploaded_file)
             if results:
                 st.markdown(render_html(results), unsafe_allow_html=True)

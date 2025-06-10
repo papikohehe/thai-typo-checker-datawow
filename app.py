@@ -72,47 +72,36 @@ def safe_check(text):
         return text
 
 
+@st.cache_data(show_spinner=False)
 def cross_check_spelling(text):
     tokens = word_tokenize(text)
-    marked_text = thaispellcheck.check(text, autocorrect=False)
-    thaispell_errors = re.findall(r"<คำผิด>(.*?)</คำผิด>", marked_text)
-    pythai_errors = [word for word in tokens if word not in spell(word)]
+    thaispell_errors = set(thaispellcheck.get_errors(text))
+    pythainlp_errors = set(w for w in tokens if w not in spell(w))
 
-    all_errors = set(thaispell_errors + pythai_errors)
-    high_errors = []
-    errors = []
+    high_errors = list(thaispell_errors & pythainlp_errors)
+    partial_errors = list((thaispell_errors | pythainlp_errors) - set(high_errors))
 
-    for word in all_errors:
-        in_thaispell = word in thaispell_errors
-        in_pythai = word in pythai_errors
-        if in_thaispell and in_pythai:
-            high_errors.append(word)
-        else:
-            errors.append(word)
-
-    return high_errors, errors
+    return {"high_errors": high_errors, "errors": partial_errors}
 
 
 def check_docx(file):
     doc = docx.Document(file)
-    paragraphs = doc.paragraphs
-    total = len(paragraphs)
+    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
     results = []
 
     progress_bar = st.progress(0, text="Processing...")
 
-    for i, para in enumerate(paragraphs):
-        text = para.text.strip()
-        if not text:
-            continue
-
+    for i, text in enumerate(paragraphs):
         has_phinthu = PHINTHU in text
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
-        marked = safe_check(text)
-        high_errors, errors = cross_check_spelling(text)
+        spell_result = cross_check_spelling(text)
 
-        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods or high_errors or errors:
+        if any([spell_result["high_errors"], spell_result["errors"],
+                has_phinthu, has_apostrophe, invalid_periods]):
+            # Only now run the slower marking
+            marked = safe_check(text)
+
             results.append({
                 "line_no": i + 1,
                 "original": text,
@@ -120,12 +109,12 @@ def check_docx(file):
                 "has_phinthu": has_phinthu,
                 "has_apostrophe": has_apostrophe,
                 "invalid_periods": invalid_periods,
-                "high_errors": high_errors,
-                "errors": errors
+                "high_errors": spell_result["high_errors"],
+                "errors": spell_result["errors"]
             })
 
-        progress = int((i + 1) / total * 100)
-        progress_bar.progress(progress, text=f"Processing paragraph {i + 1} of {total} ({progress}%)")
+        progress = int((i + 1) / len(paragraphs) * 100)
+        progress_bar.progress(progress, text=f"Processing paragraph {i + 1} of {len(paragraphs)}")
 
     progress_bar.empty()
     return results

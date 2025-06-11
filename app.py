@@ -108,36 +108,35 @@ def render_html(results):
         line_no = item["line_no"]
         original = html_lib.escape(item["original"])
 
-        # STEP 1: Prepare and protect <คำผิด> tags using placeholders
-        marked = item["marked"].replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
+        text = item["marked"]
 
-        # STEP 2: Escape everything to prevent HTML injection
-        marked = html_lib.escape(marked)
+        # 1. Highlight spelling errors
+        text = text.replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
 
-        # STEP 3: Safely re-insert highlight marks in place of placeholders
-        marked = marked.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
-        marked = marked.replace("[[WRONG_CLOSE]]", "</mark>")
+        # 2. Escape entire content (now safe)
+        text = html_lib.escape(text)
 
-        # STEP 4: Highlight ◌ฺ (Phinthu)
-        marked = marked.replace(
-            html_lib.escape(PHINTHU),
-            "<mark style='background-color:#ffb84d;'>◌ฺ</mark>"
-        )
+        # 3. Re-insert safe <mark> tags
+        text = text.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
+        text = text.replace("[[WRONG_CLOSE]]", "</mark>")
 
-        # STEP 5: Highlight apostrophes ONLY inside visible text (not tags)
-        def highlight_apostrophes(text):
+        # 4. Highlight ◌ฺ (phinthu)
+        text = text.replace(html_lib.escape(PHINTHU), "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
+
+        # 5. Highlight apostrophes ONLY in visible text (between tags)
+        def highlight_apostrophes_safe(html_string):
             return re.sub(
                 r"(>[^<]*)'([^<]*<)",
-                lambda m: m.group(1) + "<mark style='background-color:#d5b3ff;'>'</mark>" + m.group(2),
-                text
+                lambda m: f"{m.group(1)}<mark style='background-color:#d5b3ff;'>'</mark>{m.group(2)}",
+                html_string
             )
 
-        marked = highlight_apostrophes(marked)
+        text = highlight_apostrophes_safe(text)
 
-        # STEP 6: Highlight invalid periods using precomputed indices
-        marked = highlight_invalid_periods(marked, item["invalid_periods"])
+        # 6. Highlight invalid periods (by index)
+        text = highlight_invalid_periods(text, item["invalid_periods"])
 
-        # STEP 7: Build the HTML output block
+        # 7. Assemble HTML
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
@@ -151,7 +150,7 @@ def render_html(results):
             html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., list formats, Thai time, or ellipses.</span><br>"
 
         html += f"<code style='color:gray;'>{original}</code><br>"
-        html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"
+        html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{text}</div></div>"
 
     return html
 

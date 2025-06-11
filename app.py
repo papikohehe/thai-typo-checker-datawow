@@ -4,10 +4,8 @@ import thaispellcheck
 import html as html_lib
 import re
 
-# Constants
 PHINTHU = "\u0E3A"
 
-# Updated patterns to include Thai numerals and ellipses
 VALID_PERIOD_PATTERNS = [
     r"\b[0-9]+\.",                  # Arabic numeral lists: 1., 2.
     r"\b[ก-ฮ]\.",                   # Thai alphabetical lists: ก., ข.
@@ -15,10 +13,9 @@ VALID_PERIOD_PATTERNS = [
     r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",   # Thai time: ๑๐.๑๐
     r"\bพ\.ศ\.",                   # พ.ศ.
     r"\bค\.ศ\.",                   # ค.ศ.
-    r"\.{3,}"                       # Ellipses: ..., ..........
+    r"\.{3,}"                      # Ellipses: ..., ..........
 ]
 
-# UI
 st.title("Thai Spellchecker for DOCX")
 st.write("🔍 Upload a `.docx` file to find and highlight:")
 st.markdown("""
@@ -30,16 +27,7 @@ st.markdown("""
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
-try:
-    html_output = render_html(results)
-    if "<" in html_output and "<ma<mark" in html_output:
-        st.warning("⚠️ HTML structure issue detected. A <mark> may be inserted into a tag.")
-    st.markdown(html_output, unsafe_allow_html=True)
-except Exception as e:
-    st.error("HTML rendering failed.")
-    st.exception(e)
 
-# Helpers
 def find_invalid_periods(text):
     invalid_indices = []
     for match in re.finditer(r"\.", text):
@@ -54,20 +42,11 @@ def find_invalid_periods(text):
     return invalid_indices
 
 
-def highlight_invalid_periods(text, invalid_indices):
-    offset = 0
-    for idx in invalid_indices:
-        real_idx = idx + offset
-        text = text[:real_idx] + "<mark style='background-color:#add8e6;'>.</mark>" + text[real_idx + 1:]
-        offset += len("<mark style='background-color:#add8e6;'>.</mark>") - 1
-    return text
-
-
 def safe_check(text):
     try:
         marked = thaispellcheck.check(text, autocorrect=False)
         if len(marked.replace("<คำผิด>", "").replace("</คำผิด>", "")) < len(text) - 5:
-            return text  # fallback if it looks wrong
+            return text
         return marked
     except Exception:
         return text
@@ -110,7 +89,7 @@ def check_docx(file):
 
 
 def render_html(results):
-    from html import escape
+    def escape(text): return html_lib.escape(text)
 
     def mark(text, color):
         return f"<mark style='background-color:{color};'>{escape(text)}</mark>"
@@ -122,35 +101,33 @@ def render_html(results):
         original = escape(item["original"])
         raw_text = item["marked"]
 
-        # Step 1: Safely highlight <คำผิด>
+        # Step 1: highlight <คำผิด>
         raw_text = raw_text.replace("<คำผิด>", "<<<WRONG>>>").replace("</คำผิด>", "<<<END>>>")
 
-        # Step 2: Escape everything
+        # Step 2: escape whole string
         safe_text = escape(raw_text)
 
-        # Step 3: Restore highlight tags
+        # Step 3: replace with HTML-safe highlights
         safe_text = safe_text.replace("<<<WRONG>>>", "<mark style='background-color:#ffcccc;'>")
         safe_text = safe_text.replace("<<<END>>>", "</mark>")
 
-        # Step 4: Highlight ◌ฺ
+        # Step 4: highlight ◌ฺ
         safe_text = safe_text.replace(escape(PHINTHU), mark(PHINTHU, "#ffb84d"))
 
-        # Step 5: Highlight apostrophes only between tags
+        # Step 5: highlight apostrophes between tags only
         safe_text = re.sub(
             r"(>[^<]*)'([^<]*<)",
             lambda m: f"{m.group(1)}<mark style='background-color:#d5b3ff;'>'</mark>{m.group(2)}",
             safe_text
         )
 
-        # Step 6: Highlight invalid periods using their indexes
-        # (We must work with already-marked HTML, so we skip index-based insertion — instead, match isolated dots)
+        # Step 6: highlight invalid periods
         safe_text = re.sub(
             r"(?<!\w)(\.)(?!\w)",
             lambda m: mark(".", "#add8e6"),
             safe_text
         )
 
-        # Step 7: Wrap output
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
@@ -167,15 +144,16 @@ def render_html(results):
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{safe_text}</div></div>"
 
     return html
-# Main app logic
+
+
 if uploaded_file:
     with st.spinner("🔎 Checking for typos and issues..."):
         results = check_docx(uploaded_file)
         if results:
-            st.markdown(render_html(results), unsafe_allow_html=True)
+            try:
+                st.markdown(render_html(results), unsafe_allow_html=True)
+            except Exception as e:
+                st.error("🚨 Rendering failed.")
+                st.exception(e)
         else:
             st.success("✅ No typos, apostrophes, ◌ฺ characters, or invalid periods found!")
-
-
-
-

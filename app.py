@@ -101,15 +101,10 @@ def render_html(results):
         original = escape(item["original"])
         raw_text = item["marked"]
 
-        # Step 1: highlight <คำผิด>
-        raw_text = raw_text.replace("<คำผิด>", "<<<WRONG>>>").replace("</คำผิด>", "<<<END>>>")
-
-        # Step 2: escape whole string
-        safe_text = escape(raw_text)
-
-        # Step 3: replace with HTML-safe highlights
-        safe_text = safe_text.replace("<<<WRONG>>>", "<mark style='background-color:#ffcccc;'>")
-        safe_text = safe_text.replace("<<<END>>>", "</mark>")
+        raw_text = raw_text.replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
+safe_text = html_lib.escape(raw_text)
+safe_text = safe_text.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
+safe_text = safe_text.replace("[[WRONG_CLOSE]]", "</mark>")
 
         # Step 4: highlight ◌ฺ
         safe_text = safe_text.replace(escape(PHINTHU), mark(PHINTHU, "#ffb84d"))

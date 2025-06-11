@@ -4,8 +4,10 @@ import thaispellcheck
 import html as html_lib
 import re
 
+# Constants
 PHINTHU = "\u0E3A"
 
+# Valid patterns for Thai period usage
 VALID_PERIOD_PATTERNS = [
     r"\b[0-9]+\.",                  # Arabic numeral lists: 1., 2.
     r"\b[ก-ฮ]\.",                   # Thai alphabetical lists: ก., ข.
@@ -16,6 +18,7 @@ VALID_PERIOD_PATTERNS = [
     r"\.{3,}"                      # Ellipses: ..., ..........
 ]
 
+# UI
 st.title("Thai Spellchecker for DOCX")
 st.write("🔍 Upload a `.docx` file to find and highlight:")
 st.markdown("""
@@ -28,6 +31,7 @@ st.markdown("""
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
 
 
+# Helper functions
 def find_invalid_periods(text):
     invalid_indices = []
     for match in re.finditer(r"\.", text):
@@ -101,28 +105,34 @@ def render_html(results):
         original = escape(item["original"])
         raw_text = item["marked"]
 
+        # Step 1: Replace <คำผิด> tags with safe placeholders
         raw_text = raw_text.replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
-safe_text = html_lib.escape(raw_text)
-safe_text = safe_text.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
-safe_text = safe_text.replace("[[WRONG_CLOSE]]", "</mark>")
 
-        # Step 4: highlight ◌ฺ
+        # Step 2: Escape the entire text (placeholders preserved)
+        safe_text = escape(raw_text)
+
+        # Step 3: Re-insert highlight marks
+        safe_text = safe_text.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
+        safe_text = safe_text.replace("[[WRONG_CLOSE]]", "</mark>")
+
+        # Step 4: Highlight ◌ฺ
         safe_text = safe_text.replace(escape(PHINTHU), mark(PHINTHU, "#ffb84d"))
 
-        # Step 5: highlight apostrophes between tags only
+        # Step 5: Highlight apostrophes only between tags
         safe_text = re.sub(
             r"(>[^<]*)'([^<]*<)",
             lambda m: f"{m.group(1)}<mark style='background-color:#d5b3ff;'>'</mark>{m.group(2)}",
             safe_text
         )
 
-        # Step 6: highlight invalid periods
+        # Step 6: Highlight invalid periods by replacing isolated dots
         safe_text = re.sub(
             r"(?<!\w)(\.)(?!\w)",
             lambda m: mark(".", "#add8e6"),
             safe_text
         )
 
+        # Final output block
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
@@ -141,6 +151,7 @@ safe_text = safe_text.replace("[[WRONG_CLOSE]]", "</mark>")
     return html
 
 
+# Main app logic
 if uploaded_file:
     with st.spinner("🔎 Checking for typos and issues..."):
         results = check_docx(uploaded_file)
@@ -148,7 +159,7 @@ if uploaded_file:
             try:
                 st.markdown(render_html(results), unsafe_allow_html=True)
             except Exception as e:
-                st.error("🚨 Rendering failed.")
+                st.error("🚨 Error rendering HTML.")
                 st.exception(e)
         else:
             st.success("✅ No typos, apostrophes, ◌ฺ characters, or invalid periods found!")

@@ -106,46 +106,49 @@ def render_html(results):
     for item in results:
         line_no = item["line_no"]
         original = html_lib.escape(item["original"])
-        marked = html_lib.escape(item["marked"])
-        has_phinthu = item["has_phinthu"]
-        has_apostrophe = item["has_apostrophe"]
-        invalid_periods = item["invalid_periods"]
-
-        # Highlight <คำผิด>
-        marked = marked.replace("&lt;คำผิด&gt;", "<mark style='background-color:#ffcccc;'>")
-        marked = marked.replace("&lt;/คำผิด&gt;", "</mark>")
-
-        # Highlight ◌ฺ
+        
+        # Step 1: Temporarily replace <คำผิด> with placeholders BEFORE escaping
+        marked = item["marked"]
+        marked = marked.replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
+        
+        # Step 2: Escape the whole string to prevent unsafe HTML injection
+        marked = html_lib.escape(marked)
+        
+        # Step 3: Replace placeholders with actual mark tags
+        marked = marked.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
+        marked = marked.replace("[[WRONG_CLOSE]]", "</mark>")
+        
+        # Step 4: Highlight ◌ฺ
         marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
 
-        # Highlight apostrophes
+        # Step 5: Highlight apostrophes inside HTML content safely
         def highlight_apostrophes(text):
             def replacer(match):
                 content = match.group(1)
                 return ">" + content.replace("'", "<mark style='background-color:#d5b3ff;'>'</mark>") + "<"
             return re.sub(r">(.*?)<", replacer, text)
-
         marked = highlight_apostrophes(marked)
 
-        # Highlight invalid periods
-        marked = highlight_invalid_periods(marked, invalid_periods)
+        # Step 6: Highlight invalid periods
+        marked = highlight_invalid_periods(marked, item["invalid_periods"])
 
+        # Step 7: Assemble the HTML block
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 
-        if has_phinthu:
+        if item["has_phinthu"]:
             html += f"<span style='color:#d00;'>⚠️ Found unexpected dot (◌ฺ) — possibly OCR or typing error.</span><br>"
 
-        if has_apostrophe:
+        if item["has_apostrophe"]:
             html += f"<span style='color:#800080;'>⚠️ Found apostrophe `'` — may be unintended.</span><br>"
 
-        if invalid_periods:
+        if item["invalid_periods"]:
             html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.` usage — not in พ.ศ., ค.ศ., list formats, Thai time, or ellipses.</span><br>"
 
         html += f"<code style='color:gray;'>{original}</code><br>"
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{marked}</div></div>"
-    return html
 
+    return html
 
 # Main app logic
 if uploaded_file:

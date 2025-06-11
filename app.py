@@ -103,36 +103,41 @@ def check_docx(file):
 
 def render_html(results):
     html = "<style> mark { padding: 2px 4px; border-radius: 3px; } </style>"
+
     for item in results:
         line_no = item["line_no"]
         original = html_lib.escape(item["original"])
-        
-        # Step 1: Temporarily replace <คำผิด> with placeholders BEFORE escaping
-        marked = item["marked"]
-        marked = marked.replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
-        
-        # Step 2: Escape the whole string to prevent unsafe HTML injection
+
+        # STEP 1: Prepare and protect <คำผิด> tags using placeholders
+        marked = item["marked"].replace("<คำผิด>", "[[WRONG_OPEN]]").replace("</คำผิด>", "[[WRONG_CLOSE]]")
+
+        # STEP 2: Escape everything to prevent HTML injection
         marked = html_lib.escape(marked)
-        
-        # Step 3: Replace placeholders with actual mark tags
+
+        # STEP 3: Safely re-insert highlight marks in place of placeholders
         marked = marked.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
         marked = marked.replace("[[WRONG_CLOSE]]", "</mark>")
-        
-        # Step 4: Highlight ◌ฺ
-        marked = marked.replace(PHINTHU, "<mark style='background-color:#ffb84d;'>◌ฺ</mark>")
 
-        # Step 5: Highlight apostrophes inside HTML content safely
+        # STEP 4: Highlight ◌ฺ (Phinthu)
+        marked = marked.replace(
+            html_lib.escape(PHINTHU),
+            "<mark style='background-color:#ffb84d;'>◌ฺ</mark>"
+        )
+
+        # STEP 5: Highlight apostrophes ONLY inside visible text (not tags)
         def highlight_apostrophes(text):
-            def replacer(match):
-                content = match.group(1)
-                return ">" + content.replace("'", "<mark style='background-color:#d5b3ff;'>'</mark>") + "<"
-            return re.sub(r">(.*?)<", replacer, text)
+            return re.sub(
+                r"(>[^<]*)'([^<]*<)",
+                lambda m: m.group(1) + "<mark style='background-color:#d5b3ff;'>'</mark>" + m.group(2),
+                text
+            )
+
         marked = highlight_apostrophes(marked)
 
-        # Step 6: Highlight invalid periods
+        # STEP 6: Highlight invalid periods using precomputed indices
         marked = highlight_invalid_periods(marked, item["invalid_periods"])
 
-        # Step 7: Assemble the HTML block
+        # STEP 7: Build the HTML output block
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
         html += f"<b>❌ Line {line_no}</b><br>"
 

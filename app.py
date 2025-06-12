@@ -6,6 +6,7 @@ import re
 
 # Constants
 PHINTHU = "\u0E3A"
+COMMON_ERRORS = {"เข่น", "ล่ง", "สาย", "พันธ์", "ขื่อ", "ศักดิ์", "ขัก", "ฃ้ือ", "ชื้อ", "แกไข", "ที'"}
 
 # Valid patterns for Thai period usage
 VALID_PERIOD_PATTERNS = [
@@ -25,7 +26,8 @@ st.markdown("""
 - ❌ Thai spelling errors (🔴 red)<br>
 - ⚠️ Unexpected Thai dot ◌ฺ (🟠 orange)<br>
 - ⚠️ Misused apostrophes `'` (🟣 purple)<br>
-- ⚠️ Invalid period use `.` (🔵 blue)
+- ⚠️ Invalid period use `.` (🔵 blue)<br>
+- ⚠️ Common error words (🟡 yellow)
 """, unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
@@ -44,6 +46,10 @@ def find_invalid_periods(text):
         if not is_valid:
             invalid_indices.append(match.start())
     return invalid_indices
+
+
+def find_common_errors(text):
+    return [word for word in COMMON_ERRORS if word in text]
 
 
 def safe_check(text):
@@ -72,17 +78,18 @@ def check_docx(file):
         has_phinthu = PHINTHU in text
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
-
+        common_errors = find_common_errors(text)
         marked = safe_check(text)
 
-        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods:
+        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods or common_errors:
             results.append({
                 "line_no": i + 1,
                 "original": text,
                 "marked": marked,
                 "has_phinthu": has_phinthu,
                 "has_apostrophe": has_apostrophe,
-                "invalid_periods": invalid_periods
+                "invalid_periods": invalid_periods,
+                "common_errors": common_errors
             })
 
         progress = int((i + 1) / total * 100)
@@ -111,26 +118,33 @@ def render_html(results):
         # Step 2: Escape the entire text (placeholders preserved)
         safe_text = escape(raw_text)
 
-        # Step 3: Re-insert highlight marks
+        # Step 3: Re-insert highlight marks for spellcheck errors
         safe_text = safe_text.replace("[[WRONG_OPEN]]", "<mark style='background-color:#ffcccc;'>")
         safe_text = safe_text.replace("[[WRONG_CLOSE]]", "</mark>")
 
         # Step 4: Highlight ◌ฺ
         safe_text = safe_text.replace(escape(PHINTHU), mark(PHINTHU, "#ffb84d"))
 
-        # Step 5: Highlight apostrophes only between tags
+        # Step 5: Highlight apostrophes
         safe_text = re.sub(
             r"(>[^<]*)'([^<]*<)",
             lambda m: f"{m.group(1)}<mark style='background-color:#d5b3ff;'>'</mark>{m.group(2)}",
             safe_text
         )
 
-        # Step 6: Highlight invalid periods by replacing isolated dots
+        # Step 6: Highlight invalid periods
         safe_text = re.sub(
             r"(?<!\w)(\.)(?!\w)",
             lambda m: mark(".", "#add8e6"),
             safe_text
         )
+
+        # Step 7: Highlight common errors
+        for error_word in COMMON_ERRORS:
+            safe_text = safe_text.replace(
+                escape(error_word),
+                mark(error_word, "#ffff66")  # Yellow
+            )
 
         # Final output block
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
@@ -144,6 +158,9 @@ def render_html(results):
 
         if item["invalid_periods"]:
             html += f"<span style='color:#0055aa;'>⚠️ Found suspicious period `.`</span><br>"
+
+        if item.get("common_errors"):
+            html += f"<span style='color:#b58900;'>⚠️ Found common error words: {', '.join(item['common_errors'])}</span><br>"
 
         html += f"<code style='color:gray;'>{original}</code><br>"
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{safe_text}</div></div>"
@@ -162,4 +179,4 @@ if uploaded_file:
                 st.error("🚨 Error rendering HTML.")
                 st.exception(e)
         else:
-            st.success("✅ No typos, apostrophes, ◌ฺ characters, or invalid periods found!")
+            st.success("✅ No typos, apostrophes, ◌ฺ characters, invalid periods, or common errors found!")

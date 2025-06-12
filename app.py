@@ -6,7 +6,7 @@ import re
 
 # Constants
 PHINTHU = "\u0E3A"
-COMMON_ERRORS = {"เข่น", "ล่ง", "สาย", "พันธ์", "ขื่อ", "ศักดิ์", "ขัก", "ฃ้ือ", "ชื้อ", "แกไข", "ที'"}
+COMMON_ERRORS = {"เข่น", "ล่ง", "สาย", "ขี้", "ขื่อ", "ศักดิ์", "ขัก", "ฃ้ือ", "ชื้อ", "แกไข", "ที'"}
 
 # Valid patterns for Thai period usage
 VALID_PERIOD_PATTERNS = [

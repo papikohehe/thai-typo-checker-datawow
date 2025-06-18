@@ -64,8 +64,17 @@ def find_common_errors(text):
 
 
 def find_regex_errors(text):
-    return [m.group() for m in REGEX_ERROR_PATTERN.finditer(text)]
-
+    matches = []
+    for m in REGEX_ERROR_PATTERN.finditer(text):
+        start = m.start()
+        value = m.group()
+        # Skip if within the first 15 characters or match is only Thai numerals
+        if start < 15:
+            continue
+        if all(c in "๐๑๒๓๔๕๖๗๘๙" for c in value.strip()):
+            continue
+        matches.append(value)
+    return matches
 
 def safe_check(text):
     try:

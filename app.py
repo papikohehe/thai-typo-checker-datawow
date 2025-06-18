@@ -16,7 +16,11 @@ COMMON_ERRORS = {
     "รับพิง", "คิริโรจน์", "ชักถาม"
 }
 
-# Regex pattern adapted from your Google Sheets formula
+COMMON_WHITELIST = {
+    "ที่", "สถานที่", "สถานี"
+}
+
+
 REGEX_ERROR_PATTERN = re.compile(r"""(^ | $|([ๆ\)]|ฯลฯ)\S|\S(\(|ฯลฯ)|[ก-ูเ-์][A-Za-z0-9]|[A-Za-z0-9][ก-ูเ-์]|[ฯะาำเ-ๆ][ั-ูๅ็-์]|[ฯะเ-ๆ]ะ|[็-์][ิ-ู็-์]|[เ-ไ]{2,}|[ั-ู]{2,}|[เ-ไ][ก-ฮ]์|[โ-ไ][ก-ฮ]็|[ก-ฮ][็์][ะาำ]|ฯฯ|ๆๆ|[^ฤ]ๅ|ฤ[ะ-ูๆ-์]|[ัี-ืู]์| {2,}|\({2,}|\){2,}|\""{2,}|'{2,}|[\u201C\u201D]{2,}|, *(และ|หรือ)|[ฺํ-๏๚๛๐-๙!?^|—_]|ร้อยละ *\d+ *%|([^\sล]|[^ฯ]ล|^)ฯ\S|(^|\s)[ะ-ู็-์]|\D:[^\s/]|\S:[^\d/])""", re.UNICODE)
 
 VALID_PERIOD_PATTERNS = [
@@ -60,7 +64,15 @@ def find_invalid_periods(text):
 
 
 def find_common_errors(text):
-    return [word for word in COMMON_ERRORS if word in text]
+    found_errors = []
+    for word in COMMON_ERRORS:
+        if word in text:
+            # If the match is part of a whitelist word, skip it
+            is_whitelisted = any(white in text for white in COMMON_WHITELIST if word in white)
+            if is_whitelisted:
+                continue
+            found_errors.append(word)
+    return found_errors
 
 
 def find_regex_errors(text):

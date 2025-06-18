@@ -16,13 +16,13 @@ COMMON_ERRORS = { "เข่น", "ล่ง", "สาย", "ขี้", "ขื
 
 # Valid patterns for Thai period usage
 VALID_PERIOD_PATTERNS = [
-    r"\b[0-9]+\.",                  # Arabic numeral lists: 1., 2.
-    r"\b[ก-ฮ]\.",                   # Thai alphabetical lists: ก., ข.
-    r"\b[๐-๙]+\.",                 # Thai numeral lists: ๒., ๓.
-    r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",   # Thai time: ๑๐.๑๐
-    r"\bพ\.ศ\.",                   # พ.ศ.
-    r"\bค\.ศ\.",                   # ค.ศ.
-    r"\.{3,}"                      # Ellipses: ..., ..........
+    r"\b[0-9]+\.",              # Arabic numeral lists: 1., 2.
+    r"\b[ก-ฮ]\.",               # Thai alphabetical lists: ก., ข.
+    r"\b[๐-๙]+\.",              # Thai numeral lists: ๒., ๓.
+    r"\b[๐-๙]{1,2}\.[๐-๙]{1,2}",# Thai time: ๑๐.๑๐
+    r"\bพ\.ศ\.",                # พ.ศ.
+    r"\bค\.ศ\.",                # ค.ศ.
+    r"\.{3,}"                   # Ellipses: ..., ..........
 ]
 
 # UI
@@ -33,7 +33,8 @@ st.markdown("""
 - ⚠️ Unexpected Thai dot ◌ฺ (🟠 orange)<br>
 - ⚠️ Misused apostrophes `'` (🟣 purple)<br>
 - ⚠️ Invalid period use `.` (🔵 blue)<br>
-- ⚠️ Common error words (🟡 yellow)
+- ⚠️ Common error words (🟡 yellow)<br>
+- ⚠️ Non-consecutive "L" numbers (🟢 green)
 """, unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Choose a Word document", type="docx")
@@ -67,12 +68,29 @@ def safe_check(text):
     except Exception:
         return text
 
+def find_l_errors(paragraphs_with_l):
+    """
+    Detects non-consecutive 'L' numbers in a list of (line_no, l_number) tuples.
+    Returns a list of line numbers where an 'L' error is detected.
+    """
+    errors = []
+    expected_l = None
+
+    for line_no, current_l in paragraphs_with_l:
+        if expected_l is None:
+            expected_l = current_l
+        elif current_l != expected_l:
+            errors.append(line_no)
+        expected_l += 1
+    return errors
+
 
 def check_docx(file):
     doc = docx.Document(file)
     paragraphs = doc.paragraphs
     total = len(paragraphs)
     results = []
+    l_paragraphs = [] # To store (line_no, l_number) for L-sequence checking
 
     progress_bar = st.progress(0, text="Processing...")
 
@@ -81,13 +99,19 @@ def check_docx(file):
         if not text:
             continue
 
+        # Check for L followed by a number at the beginning of the paragraph
+        l_match = re.match(r"^[Ll](\d+):", text)
+        if l_match:
+            l_number = int(l_match.group(1))
+            l_paragraphs.append((i + 1, l_number))
+
         has_phinthu = PHINTHU in text
         has_apostrophe = "'" in text
         invalid_periods = find_invalid_periods(text)
         common_errors = find_common_errors(text)
         marked = safe_check(text)
 
-        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods or common_errors:
+        if "<คำผิด>" in marked or has_phinthu or has_apostrophe or invalid_periods or common_errors or l_match:
             results.append({
                 "line_no": i + 1,
                 "original": text,
@@ -95,13 +119,23 @@ def check_docx(file):
                 "has_phinthu": has_phinthu,
                 "has_apostrophe": has_apostrophe,
                 "invalid_periods": invalid_periods,
-                "common_errors": common_errors
+                "common_errors": common_errors,
+                "l_match": l_match # Store the match object for potential highlighting
             })
 
         progress = int((i + 1) / total * 100)
         progress_bar.progress(progress, text=f"Processing paragraph {i + 1} of {total} ({progress}%)")
 
     progress_bar.empty()
+
+    # After processing all paragraphs, check for L-sequence errors
+    l_sequence_errors = find_l_errors(l_paragraphs)
+    for result in results:
+        if result["line_no"] in l_sequence_errors:
+            result["l_sequence_error"] = True
+        else:
+            result["l_sequence_error"] = False
+
     return results
 
 
@@ -139,18 +173,38 @@ def render_html(results):
         )
 
         # Step 6: Highlight invalid periods
-        safe_text = re.sub(
-            r"(?<!\w)(\.)(?!\w)",
-            lambda m: mark(".", "#add8e6"),
-            safe_text
-        )
+        # This needs to be careful not to re-mark things already marked.
+        # A more robust approach might involve tokenizing or processing the text sequentially.
+        # For now, let's ensure it doesn't overlap with spellcheck marks by checking for `</mark>`
+        def period_replacer(match):
+            # Check if the period is already part of a <mark> tag
+            pre_context = safe_text[max(0, match.start() - 20):match.start()]
+            post_context = safe_text[match.end():match.end() + 20]
+            if "</mark>" in pre_context or "<mark" in post_context: # Simple check to avoid double marking
+                return match.group(0)
+            return mark(".", "#add8e6")
+
+        safe_text = re.sub(r"\.", period_replacer, safe_text)
+
 
         # Step 7: Highlight common errors
         for error_word in COMMON_ERRORS:
-            safe_text = safe_text.replace(
-                escape(error_word),
-                mark(error_word, "#ffff66")  # Yellow
+            # Only replace if not already inside a spellcheck mark
+            safe_text = re.sub(
+                f"(?<!<mark[^>]*>){re.escape(error_word)}(?!</mark>)",
+                mark(error_word, "#ffff66"),
+                safe_text
             )
+
+        # Step 8: Highlight L-sequence errors
+        if item.get("l_sequence_error") and item["l_match"]:
+            l_full_text = item["l_match"].group(0) # e.g., "L1:"
+            # Find and replace the specific L match in the safe_text
+            safe_text = safe_text.replace(
+                escape(l_full_text),
+                mark(l_full_text, "#90ee90") # Light green for L errors
+            )
+
 
         # Final output block
         html += f"<div style='padding:10px;margin-bottom:15px;border:1px solid #ddd;'>"
@@ -167,6 +221,10 @@ def render_html(results):
 
         if item.get("common_errors"):
             html += f"<span style='color:#b58900;'>⚠️ Found common error words: {', '.join(item['common_errors'])}</span><br>"
+
+        if item.get("l_sequence_error"):
+            html += f"<span style='color:#228b22;'>⚠️ Found non-consecutive 'L' number.</span><br>"
+
 
         html += f"<code style='color:gray;'>{original}</code><br>"
         html += f"<div style='margin-top:0.5em;font-size:1.1em;'>{safe_text}</div></div>"
@@ -185,4 +243,4 @@ if uploaded_file:
                 st.error("🚨 Error rendering HTML.")
                 st.exception(e)
         else:
-            st.success("✅ No typos, apostrophes, ◌ฺ characters, invalid periods, or common errors found!")
+            st.success("✅ No typos, apostrophes, ◌ฺ characters, invalid periods, common errors, or 'L' sequence issues found!")
